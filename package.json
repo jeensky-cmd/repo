@@ -1,0 +1,8 @@
+{
+  "name": "gomoku-10x10",
+  "private": true,
+  "description": "브라우저에서 하는 10x10 오목",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}

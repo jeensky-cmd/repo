@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>10×10 오목</title>
+</head>
+<body>
+
+<!-- 게임 로직: DOM을 건드리지 않는다. tests/core.test.js가 이 블록만 꺼내 시험한다. -->
+<script id="gomoku-core">
+(function (root) {
+  'use strict';
+
+  var SIZE = 10;
+  var WIN = 5;
+  var EMPTY = 0, BLACK = 1, WHITE = 2;
+  var DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]];
+
+  function opponent(color) { return color === BLACK ? WHITE : BLACK; }
+  function inside(x, y) { return x >= 0 && y >= 0 && x < SIZE && y < SIZE; }
+  function idx(x, y) { return y * SIZE + x; }
+
+  function createGame() {
+    var board = [];
+    for (var i = 0; i < SIZE * SIZE; i++) board.push(EMPTY);
+    return { board: board, turn: BLACK, moves: [], winner: EMPTY, winLine: null, draw: false };
+  }
+
+  function isOver(game) { return game.winner !== EMPTY || game.draw; }
+
+  function get(board, x, y) { return inside(x, y) ? board[idx(x, y)] : -1; }
+
+  // (x, y)의 돌을 지나는 5개 이상 연결 줄을 찾아 칸 목록을 돌려준다. 없으면 null.
+  function findWinLine(board, x, y) {
+    var color = get(board, x, y);
+    if (color !== BLACK && color !== WHITE) return null;
+    for (var d = 0; d < DIRS.length; d++) {
+      var dx = DIRS[d][0], dy = DIRS[d][1];
+      var line = [[x, y]];
+      var k;
+      for (k = 1; get(board, x + dx * k, y + dy * k) === color; k++) line.push([x + dx * k, y + dy * k]);
+      for (k = 1; get(board, x - dx * k, y - dy * k) === color; k++) line.unshift([x - dx * k, y - dy * k]);
+      if (line.length >= WIN) return line;
+    }
+    return null;
+  }
+
+  // 현재 차례의 돌을 (x, y)에 둔다. 성공하면 { ok: true }, 실패하면 { ok: false, error }.
+  function play(game, x, y) {
+    if (isOver(game)) return { ok: false, error: '이미 끝난 게임입니다.' };
+    if (!inside(x, y)) return { ok: false, error: '판 밖입니다.' };
+    if (game.board[idx(x, y)] !== EMPTY) return { ok: false, error: '이미 돌이 있습니다.' };
+    var color = game.turn;
+    game.board[idx(x, y)] = color;
+    game.moves.push({ x: x, y: y, color: color });
+    var line = findWinLine(game.board, x, y);
+    if (line) {
+      game.winner = color;
+      game.winLine = line;
+    } else if (game.moves.length === SIZE * SIZE) {
+      game.draw = true;
+    } else {
+      game.turn = opponent(color);
+    }
+    return { ok: true };
+  }
+
+  // 마지막 수를 되돌린다. 되돌린 수가 없으면 false.
+  function undo(game) {
+    var m = game.moves.pop();
+    if (!m) return false;
+    game.board[idx(m.x, m.y)] = EMPTY;
+    game.turn = m.color;
+    game.winner = EMPTY;
+    game.winLine = null;
+    game.draw = false;
+    return true;
+  }
+
+  // 빈칸 (x, y)에 color를 둔다고 할 때 한 방향의 연결 수와 열린 끝 수.
+  function lineShape(board, x, y, dx, dy, color) {
+    var count = 1, open = 0, k;
+    for (k = 1; get(board, x + dx * k, y + dy * k) === color; k++) count++;
+    if (get(board, x + dx * k, y + dy * k) === EMPTY) open++;
+    for (k = 1; get(board, x - dx * k, y - dy * k) === color; k++) count++;
+    if (get(board, x - dx * k, y - dy * k) === EMPTY) open++;
+    return { count: count, open: open };
+  }
+
+  function shapeScore(count, open) {
+    if (count >= WIN) return 1000000;
+    if (open === 0) return 0;
+    if (count === 4) return open === 2 ? 100000 : 10000;
+    if (count === 3) return open === 2 ? 5000 : 500;
+    if (count === 2) return open === 2 ? 200 : 50;
+    return open === 2 ? 10 : 2;
+  }
+
+  // color 입장에서 빈칸 (x, y)의 가치.
+  function cellScore(board, x, y, color) {
+    var total = 0;
+    for (var d = 0; d < DIRS.length; d++) {
+      var s = lineShape(board, x, y, DIRS[d][0], DIRS[d][1], color);
+      total += shapeScore(s.count, s.open);
+    }
+    return total;
+  }
+
+  function wouldWin(board, x, y, color) {
+    for (var d = 0; d < DIRS.length; d++) {
+      if (lineShape(board, x, y, DIRS[d][0], DIRS[d][1], color).count >= WIN) return true;
+    }
+    return false;
+  }
+
+  // 현재 차례의 컴퓨터가 둘 칸. 무작위 없이 항상 같은 판에서 같은 수를 고른다.
+  function bestMove(game) {
+    if (isOver(game)) return null;
+    var me = game.turn, foe = opponent(me), board = game.board;
+    var empties = [];
+    for (var y = 0; y < SIZE; y++) {
+      for (var x = 0; x < SIZE; x++) if (board[idx(x, y)] === EMPTY) empties.push([x, y]);
+    }
+    var i;
+    for (i = 0; i < empties.length; i++) if (wouldWin(board, empties[i][0], empties[i][1], me)) return { x: empties[i][0], y: empties[i][1] };
+    for (i = 0; i < empties.length; i++) if (wouldWin(board, empties[i][0], empties[i][1], foe)) return { x: empties[i][0], y: empties[i][1] };
+
+    var best = null, bestScore = -1, bestDist = Infinity;
+    var c = (SIZE - 1) / 2;
+    for (i = 0; i < empties.length; i++) {
+      var ex = empties[i][0], ey = empties[i][1];
+      var score = cellScore(board, ex, ey, me) + cellScore(board, ex, ey, foe) * 0.9;
+      var dist = Math.abs(ex - c) + Math.abs(ey - c);
+      if (score > bestScore || (score === bestScore && dist < bestDist)) {
+        best = { x: ex, y: ey }; bestScore = score; bestDist = dist;
+      }
+    }
+    return best;
+  }
+
+  root.GomokuCore = {
+    SIZE: SIZE, WIN: WIN, EMPTY: EMPTY, BLACK: BLACK, WHITE: WHITE,
+    opponent: opponent,
+    createGame: createGame,
+    isOver: isOver,
+    play: play,
+    undo: undo,
+    findWinLine: findWinLine,
+    bestMove: bestMove
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+</body>
+</html>
