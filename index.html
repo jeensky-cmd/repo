@@ -5,8 +5,149 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>10×10 오목</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f4ef;
+    --surface: #ffffff;
+    --text: #1d1c1a;
+    --muted: #64615a;
+    --line: #d9d5cc;
+    --accent: #1f5fbf;
+    --accent-text: #ffffff;
+    --wood: #e1b866;
+    --grid: #5a4320;
+    --mark: #e0352b;
+    --win: #e0352b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514;
+      --surface: #1f1f1d;
+      --text: #ecebe6;
+      --muted: #a6a39b;
+      --line: #3b3a36;
+      --accent: #6ea3f5;
+      --accent-text: #0d1a2e;
+      --wood: #b88d43;
+      --grid: #3d2c12;
+      --mark: #ff5a4f;
+      --win: #ff5a4f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 1.5rem; margin: 0 0 12px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  select, button.ctl {
+    font: inherit;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+  }
+  button.ctl { cursor: pointer; }
+  button.ctl.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.ctl:disabled { opacity: 0.45; cursor: default; }
+  select:focus-visible, button.ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status { min-height: 1.5em; margin: 0 0 10px; font-weight: 600; }
+  .status .sub { font-weight: 400; color: var(--muted); }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    width: 100%;
+    aspect-ratio: 1;
+    padding: 2%;
+    background: var(--wood);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    touch-action: manipulation;
+  }
+  .cell {
+    position: relative;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background-color: transparent;
+    background-image: linear-gradient(var(--grid), var(--grid)), linear-gradient(var(--grid), var(--grid));
+    background-repeat: no-repeat;
+    background-size: var(--hw, 100%) 1px, 1px var(--vh, 100%);
+    background-position: var(--hx, 0) 50%, 50% var(--vy, 0);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .cell.l { --hw: 50%; --hx: 100%; }
+  .cell.r { --hw: 50%; --hx: 0; }
+  .cell.t { --vh: 50%; --vy: 100%; }
+  .cell.b { --vh: 50%; --vy: 0; }
+  .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+  .cell::after {
+    content: "";
+    position: absolute;
+    inset: 9%;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .cell.black::after {
+    background: radial-gradient(circle at 35% 30%, #5b5b5b, #111 55%, #000);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+  .cell.white::after {
+    background: radial-gradient(circle at 35% 30%, #ffffff, #ececec 55%, #c9c9c9);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+  .cell.last::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    left: 50%; top: 50%;
+    width: 22%; height: 22%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--mark);
+    pointer-events: none;
+  }
+  .cell.win::after { box-shadow: 0 0 0 3px var(--win); }
+  .board.can-play .cell:not(.black):not(.white):hover::after { opacity: 0.4; }
+  .board.can-play.turn-black .cell:not(.black):not(.white):hover::after { background: #111; }
+  .board.can-play.turn-white .cell:not(.black):not(.white):hover::after { background: #fff; }
+  .board:not(.can-play) .cell { cursor: default; }
+
+  .help { margin-top: 16px; color: var(--muted); font-size: 0.9rem; }
+  .help ul { padding-left: 1.2em; margin: 6px 0 0; }
+</style>
 </head>
 <body>
+<main>
+  <h1>10×10 오목</h1>
+  <div class="controls">
+    <select id="mode" aria-label="대전 방식">
+      <option value="pvp">두 사람</option>
+      <option value="ai-white">컴퓨터와 (나는 흑)</option>
+      <option value="ai-black">컴퓨터와 (나는 백)</option>
+    </select>
+    <button type="button" class="ctl primary" id="new">새 게임</button>
+    <button type="button" class="ctl" id="undo">무르기</button>
+  </div>
+  <p class="status" id="status" aria-live="polite"></p>
+  <div class="board" id="board" role="grid" aria-label="오목판 10×10"></div>
+  <div class="help">
+    <ul>
+      <li>흑이 먼저 두고, 가로·세로·대각선으로 같은 색 5개 이상을 먼저 이으면 이깁니다.</li>
+      <li>판이 다 차도 승자가 없으면 무승부입니다.</li>
+      <li>키보드: 방향키로 칸 이동, Enter 또는 Space로 돌 놓기.</li>
+    </ul>
+  </div>
+</main>
 
 <!-- 게임 로직: DOM을 건드리지 않는다. tests/core.test.js가 이 블록만 꺼내 시험한다. -->
 <script id="gomoku-core">
@@ -151,6 +292,178 @@
     bestMove: bestMove
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+
+<!-- 화면: 판을 그리고 클릭·키보드 입력을 GomokuCore로 넘긴다. -->
+<script id="gomoku-ui">
+(function () {
+  'use strict';
+  var G = GomokuCore;
+  var N = G.SIZE;
+  var boardEl = document.getElementById('board');
+  var statusEl = document.getElementById('status');
+  var modeEl = document.getElementById('mode');
+  var undoBtn = document.getElementById('undo');
+  var NAME = {};
+  NAME[G.BLACK] = '흑';
+  NAME[G.WHITE] = '백';
+
+  var game = G.createGame();
+  var aiColor = G.EMPTY; // EMPTY면 두 사람 대전
+  var aiTimer = null;
+  var focusX = Math.floor((N - 1) / 2), focusY = Math.floor((N - 1) / 2);
+  var cells = [];
+
+  // 판 칸 만들기(한 번만)
+  for (var y = 0; y < N; y++) {
+    var rowEl = document.createElement('div');
+    rowEl.setAttribute('role', 'row');
+    rowEl.style.display = 'contents';
+    for (var x = 0; x < N; x++) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cell' + (x === 0 ? ' l' : '') + (x === N - 1 ? ' r' : '') + (y === 0 ? ' t' : '') + (y === N - 1 ? ' b' : '');
+      b.setAttribute('role', 'gridcell');
+      b.dataset.x = x;
+      b.dataset.y = y;
+      rowEl.appendChild(b);
+      cells.push(b);
+    }
+    boardEl.appendChild(rowEl);
+  }
+
+  function cellAt(x, y) { return cells[y * N + x]; }
+
+  function humanTurn() {
+    return !G.isOver(game) && game.turn !== aiColor;
+  }
+
+  function render() {
+    var last = game.moves[game.moves.length - 1];
+    var win = {};
+    (game.winLine || []).forEach(function (p) { win[p[0] + ',' + p[1]] = true; });
+
+    for (var i = 0; i < cells.length; i++) {
+      var cx = i % N, cy = Math.floor(i / N);
+      var c = game.board[i];
+      var el = cells[i];
+      el.classList.toggle('black', c === G.BLACK);
+      el.classList.toggle('white', c === G.WHITE);
+      el.classList.toggle('last', !!last && last.x === cx && last.y === cy);
+      el.classList.toggle('win', !!win[cx + ',' + cy]);
+      el.tabIndex = (cx === focusX && cy === focusY) ? 0 : -1;
+      el.setAttribute('aria-label', (cy + 1) + '행 ' + (cx + 1) + '열, ' + (c === G.EMPTY ? '빈칸' : NAME[c]));
+    }
+
+    var canPlay = humanTurn() && aiTimer === null;
+    boardEl.classList.toggle('can-play', canPlay);
+    boardEl.classList.toggle('turn-black', game.turn === G.BLACK);
+    boardEl.classList.toggle('turn-white', game.turn === G.WHITE);
+
+    var text, sub = '';
+    if (game.winner) {
+      text = NAME[game.winner] + ' 승리!';
+      if (aiColor) sub = game.winner === aiColor ? '컴퓨터가 이겼습니다.' : '내가 이겼습니다.';
+    } else if (game.draw) {
+      text = '무승부';
+      sub = '판이 다 찼습니다.';
+    } else {
+      text = NAME[game.turn] + ' 차례';
+      if (aiColor) sub = game.turn === aiColor ? '컴퓨터가 생각 중…' : '내 차례';
+    }
+    statusEl.replaceChildren(document.createTextNode(text));
+    var subEl = document.createElement('span');
+    subEl.className = 'sub';
+    subEl.textContent = ' · ' + game.moves.length + '수' + (sub ? ' · ' + sub : '');
+    statusEl.appendChild(subEl);
+
+    undoBtn.disabled = !canUndo();
+  }
+
+  function canUndo() {
+    if (aiTimer !== null) return false;
+    if (!aiColor) return game.moves.length > 0;
+    return game.moves.some(function (m) { return m.color !== aiColor; });
+  }
+
+  function scheduleAi() {
+    if (!aiColor || G.isOver(game) || game.turn !== aiColor || aiTimer !== null) return;
+    aiTimer = setTimeout(function () {
+      aiTimer = null;
+      var m = G.bestMove(game);
+      if (m) G.play(game, m.x, m.y);
+      render();
+    }, 300);
+    render();
+  }
+
+  function stopAi() {
+    if (aiTimer !== null) { clearTimeout(aiTimer); aiTimer = null; }
+  }
+
+  function tryPlay(x, y) {
+    if (!humanTurn() || aiTimer !== null) return;
+    if (G.play(game, x, y).ok) {
+      render();
+      scheduleAi();
+    }
+  }
+
+  function newGame() {
+    stopAi();
+    game = G.createGame();
+    aiColor = modeEl.value === 'ai-white' ? G.WHITE : modeEl.value === 'ai-black' ? G.BLACK : G.EMPTY;
+    render();
+    scheduleAi();
+  }
+
+  function undo() {
+    if (!canUndo()) return;
+    // 컴퓨터 대전: 내 수가 하나 되돌아가 다시 내 차례가 될 때까지 무른다.
+    G.undo(game);
+    while (aiColor && game.moves.length && game.turn === aiColor) G.undo(game);
+    render();
+    scheduleAi();
+  }
+
+  boardEl.addEventListener('click', function (e) {
+    var el = e.target.closest('.cell');
+    if (!el) return;
+    focusX = +el.dataset.x;
+    focusY = +el.dataset.y;
+    tryPlay(focusX, focusY);
+  });
+
+  // 어떤 방법으로든 칸에 포커스가 가면 방향키 기준 위치를 그 칸으로 맞춘다.
+  boardEl.addEventListener('focusin', function (e) {
+    var el = e.target.closest('.cell');
+    if (!el) return;
+    focusX = +el.dataset.x;
+    focusY = +el.dataset.y;
+  });
+
+  boardEl.addEventListener('keydown', function (e) {
+    var dx = 0, dy = 0;
+    if (e.key === 'ArrowLeft') dx = -1;
+    else if (e.key === 'ArrowRight') dx = 1;
+    else if (e.key === 'ArrowUp') dy = -1;
+    else if (e.key === 'ArrowDown') dy = 1;
+    else if (e.key === 'Home') { focusX = 0; dx = 0; }
+    else if (e.key === 'End') { focusX = N - 1; dx = 0; }
+    else return;
+    e.preventDefault();
+    focusX = Math.min(N - 1, Math.max(0, focusX + dx));
+    focusY = Math.min(N - 1, Math.max(0, focusY + dy));
+    render();
+    cellAt(focusX, focusY).focus();
+  });
+
+  document.getElementById('new').addEventListener('click', newGame);
+  modeEl.addEventListener('change', newGame);
+  undoBtn.addEventListener('click', undo);
+
+  newGame();
+})();
 </script>
 </body>
 </html>
