@@ -6,9 +6,118 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>설문 집계기</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --text: #1d1d1b;
+    --muted: #5f5f5a;
+    --line: #dcdcd6;
+    --accent: #1f5fbf;
+    --accent-text: #ffffff;
+    --error-bg: #fdecea;
+    --error-text: #8a1c12;
+    --zebra: #f2f2ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615;
+      --surface: #1f1f1d;
+      --text: #ececea;
+      --muted: #a3a39c;
+      --line: #3a3a36;
+      --accent: #6ea3f5;
+      --accent-text: #0d1a2e;
+      --error-bg: #3b1a16;
+      --error-text: #ffb4a8;
+      --zebra: #252523;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .lead { margin: 0 0 20px; color: var(--muted); }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  textarea {
+    width: 100%;
+    min-height: 200px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font: 0.9rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    tab-size: 8;
+    resize: vertical;
+  }
+  textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+  button {
+    font: inherit;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .note { font-size: 0.85rem; color: var(--muted); margin: 8px 0 0; }
+  #result { margin-top: 28px; }
+  #result h2 { font-size: 1.15rem; margin: 0 0 6px; }
+  .summary { margin: 0 0 10px; color: var(--muted); }
+  .error {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--error-bg);
+    color: var(--error-text);
+  }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 8em; }
+  thead th { font-weight: 600; background: var(--zebra); }
+  tbody tr:nth-child(even) > * { background: var(--zebra); }
+  tbody tr:last-child > * { border-bottom: 0; }
+  tbody th { font-weight: normal; }
+  details { margin-top: 20px; color: var(--muted); font-size: 0.9rem; }
+  details ul { padding-left: 1.2em; }
+</style>
 </head>
 <body>
-<h1>설문 집계기</h1>
+<main>
+  <h1>설문 집계기</h1>
+  <p class="lead">엑셀에서 머리글 줄까지 복사해 아래에 붙여넣으면 문항별 결과가 나옵니다.</p>
+
+  <label for="input">응답 데이터</label>
+  <textarea id="input" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+    placeholder="응답번호&#9;문항1&#9;문항2&#10;1&#9;5&#9;4&#10;2&#9;3&#9;"></textarea>
+  <div class="actions">
+    <button type="button" class="primary" id="run">집계</button>
+    <button type="button" id="clear">지우기</button>
+  </div>
+  <p class="note">붙여넣은 데이터는 이 브라우저 안에서만 계산하며, 어디로도 보내거나 저장하지 않습니다. 입력칸에서 Tab 키는 탭 문자를 넣고, Esc 다음 Tab은 다음 요소로 이동합니다.</p>
+
+  <section id="result" aria-live="polite"></section>
+
+  <details>
+    <summary>집계 규칙</summary>
+    <ul>
+      <li>첫 줄은 머리글, 첫 열(응답번호)은 집계하지 않습니다.</li>
+      <li>앞뒤 공백을 지운 값이 1·2·3·4·5 중 하나면 <b>유효</b>, 비었거나 공백만 있으면 <b>빈 응답</b>, 그 밖의 값은 <b>제외</b>입니다.</li>
+      <li>칸 수가 머리글보다 모자란 줄은 모자란 칸을 빈 응답으로 셉니다. 머리글보다 많은 칸은 무시합니다.</li>
+      <li>평균 = 유효 응답의 합 ÷ 유효 응답 수, 소수 셋째 자리에서 반올림해 둘째 자리까지. 유효 응답이 없으면 "-".</li>
+    </ul>
+  </details>
+</main>
 
 <!-- 계산 로직: DOM을 건드리지 않는다. tests/core.test.js가 이 블록만 꺼내 시험한다. -->
 <script id="survey-core">
@@ -141,6 +250,100 @@
     tally: tally
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+
+<!-- 화면: 입력을 읽어 SurveyCore.tally 결과를 표로 그린다. 사용자 데이터는 textContent로만 넣는다. -->
+<script id="survey-ui">
+(function () {
+  'use strict';
+  var input = document.getElementById('input');
+  var result = document.getElementById('result');
+  var timer = null;
+
+  function el(tag, text, className) {
+    var node = document.createElement(tag);
+    if (text != null) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+
+  function render() {
+    result.replaceChildren();
+    if (input.value === '') return;
+
+    var res = SurveyCore.tally(input.value);
+    if (!res.ok) {
+      result.appendChild(el('p', res.error, 'error'));
+      return;
+    }
+
+    result.appendChild(el('h2', '결과'));
+    var summary = '응답 ' + res.responseCount + '줄 · 문항 ' + res.questions.length + '개';
+    if (res.shortRows) summary += ' · 칸이 모자란 줄 ' + res.shortRows + '개(모자란 칸은 빈 응답으로 셈)';
+    if (res.longRows) summary += ' · 칸이 남는 줄 ' + res.longRows + '개(남는 칸은 무시)';
+    result.appendChild(el('p', summary, 'summary'));
+
+    var table = el('table');
+    var thead = el('thead');
+    var hr = el('tr');
+    ['문항', '유효 응답', '평균', '빈 응답', '제외'].forEach(function (h) {
+      var th = el('th', h);
+      th.scope = 'col';
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = el('tbody');
+    res.questions.forEach(function (q) {
+      var tr = el('tr');
+      var th = el('th', q.name);
+      th.scope = 'row';
+      tr.appendChild(th);
+      [q.valid, q.average, q.blank, q.excluded].forEach(function (v) {
+        tr.appendChild(el('td', String(v)));
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    var wrap = el('div', null, 'table-wrap');
+    wrap.appendChild(table);
+    result.appendChild(wrap);
+  }
+
+  // 입력칸에서 Tab 키로 탭 문자를 넣을 수 있게 한다(Esc 뒤 Tab은 포커스 이동).
+  var escaped = false;
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { escaped = true; return; }
+    if (e.key === 'Tab' && !e.shiftKey && !escaped && !e.isComposing) {
+      e.preventDefault();
+      var s = input.selectionStart, t = input.selectionEnd;
+      input.setRangeText('\t', s, t, 'end');
+      schedule();
+    }
+    escaped = false;
+  });
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(render, 150);
+  }
+
+  input.addEventListener('input', schedule);
+  document.getElementById('run').addEventListener('click', function () {
+    clearTimeout(timer);
+    render();
+  });
+  document.getElementById('clear').addEventListener('click', function () {
+    clearTimeout(timer);
+    input.value = '';
+    render();
+    input.focus();
+  });
+
+  render();
+})();
 </script>
 </body>
 </html>
