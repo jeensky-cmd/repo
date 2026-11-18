@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>설문 집계기</title>
+</head>
+<body>
+<h1>설문 집계기</h1>
+
+<!-- 계산 로직: DOM을 건드리지 않는다. tests/core.test.js가 이 블록만 꺼내 시험한다. -->
+<script id="survey-core">
+(function (root) {
+  'use strict';
+
+  // 엑셀 복사 결과(탭 구분 텍스트)를 줄 × 칸 배열로 바꾼다.
+  // 큰따옴표로 감싼 칸은 칸 안의 탭·줄바꿈을 그대로 두고 "" 를 " 로 바꾼다.
+  function parseTsv(text) {
+    var s = String(text == null ? '' : text);
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    var n = s.length;
+    var rows = [];
+    var row = [];
+    var field = '';
+    var atStart = true; // 칸의 첫 글자 위치인가
+    var i = 0;
+
+    while (i < n) {
+      var c = s[i];
+
+      if (atStart && c === '"') {
+        var j = i + 1;
+        var val = '';
+        var closed = false;
+        while (j < n) {
+          if (s[j] === '"') {
+            if (s[j + 1] === '"') { val += '"'; j += 2; continue; }
+            closed = true; j++; break;
+          }
+          val += s[j]; j++;
+        }
+        if (closed && (j === n || s[j] === '\t' || s[j] === '\n' || s[j] === '\r')) {
+          field = val; i = j; atStart = false; continue;
+        }
+        // 제대로 닫히지 않은 따옴표는 글자 그대로 둔다.
+        field += c; i++; atStart = false; continue;
+      }
+
+      if (c === '\t') {
+        row.push(field); field = ''; atStart = true; i++; continue;
+      }
+      if (c === '\n' || c === '\r') {
+        row.push(field); rows.push(row);
+        row = []; field = ''; atStart = true; i++;
+        if (c === '\r' && s[i] === '\n') i++;
+        continue;
+      }
+      field += c; atStart = false; i++;
+    }
+    if (!atStart || row.length > 0) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  // 칸 하나를 'valid' | 'blank' | 'excluded' 로 판정한다. 없는 칸(undefined)은 빈 응답.
+  function classifyCell(value) {
+    if (value == null) return 'blank';
+    var t = String(value).trim();
+    if (t === '') return 'blank';
+    if (t === '1' || t === '2' || t === '3' || t === '4' || t === '5') return 'valid';
+    return 'excluded';
+  }
+
+  // 합 ÷ 수를 소수 셋째 자리에서 반올림해 둘째 자리까지. 수가 0이면 "-".
+  // 부동소수 오차를 피하려고 정수로만 계산한다(합·수는 0 이상의 정수).
+  function formatAverage(sum, count) {
+    if (!count) return '-';
+    var q = Math.floor((sum * 200 + count) / (2 * count)); // round(sum*100/count), 0.5 올림
+    var whole = Math.floor(q / 100);
+    var frac = q % 100;
+    return whole + '.' + (frac < 10 ? '0' : '') + frac;
+  }
+
+  function isEmptyLine(row) {
+    return row.length === 1 && row[0] === '';
+  }
+
+  // 붙여넣은 텍스트를 문항별로 집계한다.
+  function tally(text) {
+    var rows = parseTsv(text).filter(function (r) { return !isEmptyLine(r); });
+    if (rows.length === 0) {
+      return { ok: false, error: '붙여넣은 내용이 없습니다.' };
+    }
+    var header = rows[0];
+    if (header.length < 2) {
+      return { ok: false, error: '머리글에 문항 열이 없습니다. 첫 열(응답번호) 뒤에 문항 열이 하나 이상 있어야 합니다. 엑셀에서 머리글 줄까지 복사했는지 확인해 주세요.' };
+    }
+
+    var questions = [];
+    for (var col = 1; col < header.length; col++) {
+      var name = header[col].trim();
+      questions.push({
+        name: name === '' ? '(이름 없음 · ' + (col + 1) + '열)' : name,
+        valid: 0, sum: 0, average: '-', blank: 0, excluded: 0
+      });
+    }
+
+    var shortRows = 0;
+    var longRows = 0;
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      if (row.length < header.length) shortRows++;
+      else if (row.length > header.length) longRows++;
+      for (var k = 0; k < questions.length; k++) {
+        var cell = row[k + 1];
+        var kind = classifyCell(cell);
+        var q = questions[k];
+        if (kind === 'valid') { q.valid++; q.sum += Number(cell.trim()); }
+        else if (kind === 'blank') q.blank++;
+        else q.excluded++;
+      }
+    }
+    for (var m = 0; m < questions.length; m++) {
+      questions[m].average = formatAverage(questions[m].sum, questions[m].valid);
+    }
+
+    return {
+      ok: true,
+      responseCount: rows.length - 1,
+      shortRows: shortRows,
+      longRows: longRows,
+      questions: questions
+    };
+  }
+
+  root.SurveyCore = {
+    parseTsv: parseTsv,
+    classifyCell: classifyCell,
+    formatAverage: formatAverage,
+    tally: tally
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+</body>
+</html>
